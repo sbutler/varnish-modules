@@ -33,6 +33,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
+#include <pthread.h>
 
 #include "vmod_config.h"
 
@@ -85,6 +86,28 @@ cobj_get(struct vmod_priv *priv)
 		CAST_OBJ_NOTNULL(vcp, priv->priv, VMOD_COOKIE_MAGIC);
 
 	return (vcp);
+}
+
+pthread_mutex_t cookie_re_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+/*
+ * Get the compiled regular expression from the private storage. If the
+ * storage is NULL then initialize it. This needs to be locked because
+ * of threading at the call site.
+ */
+static void *
+get_re(struct vmod_priv *priv, const char *s)
+{
+	if (priv->priv == NULL) {
+		AZ(pthread_mutex_lock(&cookie_re_mutex));
+		if (priv->priv == NULL) {
+			VRT_re_init(&priv->priv, s);
+			priv->free = VRT_re_fini;
+		}
+		AZ(pthread_mutex_unlock(&cookie_re_mutex));
+	}
+
+	return priv->priv;
 }
 
 VCL_VOID
@@ -317,6 +340,44 @@ vmod_filter(VRT_CTX, struct vmod_priv *priv, VCL_STRING blacklist_s)
 {
 	(void)ctx;
 	filter_cookies(priv, blacklist_s, FILTER_ACTION_BLACKLIST);
+}
+
+static void
+regfilter_cookies(VRT_CTX, struct vmod_priv *priv, void *re,
+		VCL_BOOL filter_action)
+{
+	struct cookie *cookieptr, *safeptr;
+	struct vmod_cookie *vcp = cobj_get(priv);
+	int matched = 0;
+
+	/* Filter existing cookies that either aren't in the whitelist or
+	 * are in the blacklist (depending on the filter_action) */
+	VTAILQ_FOREACH_SAFE(cookieptr, &vcp->cookielist, list, safeptr) {
+		CHECK_OBJ_NOTNULL(cookieptr, VMOD_COOKIE_ENTRY_MAGIC);
+		matched = 0;
+
+		if (VRT_re_match(ctx, cookieptr->name, re)) {
+			matched = 1;
+		}
+		if (matched != filter_action)
+			VTAILQ_REMOVE(&vcp->cookielist, cookieptr, list);
+	}
+}
+
+VCL_VOID
+vmod_regfilter_except(VRT_CTX, struct vmod_priv *priv,
+		struct vmod_priv *priv_call, VCL_STRING pattern_s)
+{
+	void *re = get_re(priv_call, pattern_s);
+	regfilter_cookies(ctx, priv, re, FILTER_ACTION_WHITELIST);
+}
+
+VCL_VOID
+vmod_regfilter(VRT_CTX, struct vmod_priv *priv,
+		struct vmod_priv *priv_call, VCL_STRING pattern_s)
+{
+	void *re = get_re(priv_call, pattern_s);
+	regfilter_cookies(ctx, priv, re, FILTER_ACTION_BLACKLIST);
 }
 
 VCL_STRING

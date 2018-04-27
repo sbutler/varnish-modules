@@ -90,6 +90,24 @@ Example
                         // "cookie3: value3";
                 }
 
+$Function VOID regfilter(PRIV_TASK, PRIV_CALL, STRING filterstring)
+
+Description
+        Delete all cookies from internal vmod storage that match the
+        filterstring regular expression. Please note that it is not
+	recommended to send variables to this function. The regular
+	expression is compiled only once, on the first call.
+
+Example
+        ::
+
+                sub vcl_recv {
+                        cookie.parse("cookie1: value1; cookie2: value2; cookie3: value3");
+                        cookie.regfilter("cookie[12]");
+                        // get_string() will now yield
+                        // "cookie3: value3";
+                }
+
 $Function VOID filter_except(PRIV_TASK, STRING filterstring)
 
 Description
@@ -101,6 +119,24 @@ Example
                 sub vcl_recv {
                         cookie.parse("cookie1: value1; cookie2: value2; cookie3: value3");
                         cookie.filter_except("cookie1,cookie2");
+                        // get_string() will now yield
+                        // "cookie1: value1; cookie2: value2;";
+                }
+
+$Function VOID regfilter_except(PRIV_TASK, PRIV_CALL, STRING filterstring)
+
+Description
+        Delete all cookies from internal vmod storage that are do not
+        match the filterstring regular expression. Please note that it
+	is not recommended to send variables to this function. The
+	regular expression is compiled only once, on the first call.
+
+Example
+        ::
+
+                sub vcl_recv {
+                        cookie.parse("cookie1: value1; cookie2: value2; cookie3: value3");
+                        cookie.regfilter_except("cookie[12]");
                         // get_string() will now yield
                         // "cookie1: value1; cookie2: value2;";
                 }

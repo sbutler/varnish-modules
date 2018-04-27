@@ -1,0 +1,26 @@
+varnishtest "Test regfilter_expect in vmod-cookie"
+
+server s1 {
+       rxreq
+       txresp
+} -start
+
+varnish v1 -vcl+backend {
+    import cookie from "${vmod_builddir}/.libs/libvmod_cookie.so";
+
+    sub vcl_deliver {
+        cookie.set("biscuit", "standard");
+        cookie.set("bredela", "eggwhites");
+        cookie.set("chocolatechip", "verychippy");
+        cookie.set("empire", "jellytots");
+        cookie.regfilter_except("^(bredela|empire|baz)$");
+        set resp.http.X-foo = cookie.get_string();
+    }
+} -start
+
+client c1 {
+    txreq -url "/"
+    rxresp
+    expect resp.http.X-foo == "bredela=eggwhites; empire=jellytots;"
+}
+client c1 -run
